@@ -1,4 +1,4 @@
-# ジャアン - JAAn
+# JAAn (/dʒaːN/)
   Japanese Accent Annotator
 
 JAAn is a project to build a Japanese accent annotator and learn more Python in the process.
