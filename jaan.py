@@ -7,8 +7,6 @@ import collections
 UnidicFeaturesUnk = collections.namedtuple('UnidicFeaturesUnk', ['pos1', 'pos2', 'pos3', 'pos4', 'cType', 'cForm'])
 
 def annotate_accent (japanese_text: str) -> str:
-    assert(isinstance(japanese_text, str))
-    
     #run morphological analysis on input string
     tagger = fugashi.Tagger()
     words = tagger(japanese_text)
@@ -216,7 +214,7 @@ def tagger_output_to_xml(words):
         xml_tree.append(word_element)
     return xml_tree
 
-def split_mora(kana_string):
+def split_mora(kana: str) -> List[str]:
     mora_list = []
     vowel_deleters = {'ャ', 'ュ', 'ョ', 'ァ', 'ィ', 'ゥ', 'ェ', 'ォ'}
     for i in range(0, len(kana_string)):
