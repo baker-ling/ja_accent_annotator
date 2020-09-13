@@ -63,9 +63,10 @@ def raw_tagger_output_to_xml(parsing: str) -> etree.ElementBase:
     for word in words:
         surface, features = word.split('\t')
         feature_list = next(csv.reader([features]))
+        
         if len(feature_list) > 6:
             is_unk = False
-            feature_tuple = UnidicFeatures29(*feature_list)
+            feature_tuple = UnidicFeatures29(*feature_list[:29])
         else:
             is_unk = True
             feature_tuple = UnidicFeaturesUnk(*feature_list)
@@ -243,7 +244,7 @@ def transformed_tree_to_annotated_transcription(tree: etree.ElementBase, style: 
     annotated_string = ''
     current_pitch_level = 'L'
     for ap in tree.getroot():
-        if ap.get('pron') == '*':
+        if ap.get('pron') in {'*', ''}:
             annotated_string += ap.get('orth') + ' '
         else:
             accented_mora = int(ap.get('aType'))
@@ -258,7 +259,9 @@ def transformed_tree_to_annotated_transcription(tree: etree.ElementBase, style: 
                         annotated_string += word_pron + ' '
                     else:
                         mora_list = split_mora(word_pron)
-                        annotated_string += mora_list[0] + '↗' + ''.join(mora_list[1:])
+                        annotated_string += mora_list[0] + '↗' 
+                        if len(mora_list) > 1:
+                            annotated_string += ''.join(mora_list[1:])
                         current_pitch_level = 'H'
                 else:
                     mora_list = split_mora(word_pron)
@@ -301,7 +304,7 @@ def annotate_file(filename: str, nbest: int = 1, style: str = 'kana_arrows') -> 
         for line in f:
             line = line.strip()
             if line != '':
-                result += annotate_line(line, nbest, style)
+                result += annotate_line(line, nbest, style) + '\n'
             else:
                 result += '\n'
     return result
