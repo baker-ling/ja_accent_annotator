@@ -1,50 +1,63 @@
-import fugashi
+from fugashi import Tagger, UnidicFeatures29
 from lxml import etree
-from typing import List
+from typing import List, NamedTuple, TypeVar
 import csv
-import collections
+import sys
+import argparse
+import os
 
-UnidicFeaturesUnk = collections.namedtuple('UnidicFeaturesUnk', ['pos1', 'pos2', 'pos3', 'pos4', 'cType', 'cForm'])
+CHAONE_FOLDER = 'chaone-1.3.0b2'
+CHAONE_FILENAME = 'chaone_t_main.xsl'
 
-def annotate_accent (japanese_text: str) -> str:
-    #run morphological analysis on input string
-    tagger = fugashi.Tagger()
+class UnidicFeaturesUnk(NamedTuple):
+    pos1: str
+    pos2: str
+    pos3: str
+    pos4: str
+    cType: str
+    cForm: str
+
+
+def annotate_accent(japanese_text: str, style: str = 'kana_arrows') -> str:
+    # run morphological analysis on input string
+    tagger = Tagger()
     words = tagger(japanese_text)
-    
-    #convert list of tagged tokens to xml tree
+
+    # convert list of tagged tokens to xml tree
     xml_tree = tagger_output_to_xml(words)
-    
-    #run phonological processes on morphemes in xml_tree
-    ChaOne = etree.XSLT(etree.parse('./chaone-1.3.0b2/chaone_t_main.xsl'))
+
+    # run phonological processes on morphemes in xml_tree
+    ChaOne = etree.XSLT(etree.parse(os.path.join(os.path.dirname(__file__), CHAONE_FOLDER, CHAONE_FILENAME)))
     transformed_tree = ChaOne(xml_tree)
-    
-    #use tranformed xml tree to construct an annotated string
-    annotated_string = transformed_tree_to_annotated_kana(transformed_tree)
+
+    # use tranformed xml tree to construct an annotated string
+    annotated_string = transformed_tree_to_annotated_transcription(transformed_tree, style)
     return annotated_string
 
-def annotate_accent_nbest(japanese_text: str, num: int = 3) -> List[str]:
-    assert(isinstance(japanese_text, str))
-    
-    #run morphological analysis on input string
-    tagger = fugashi.Tagger()
+
+def annotate_accent_nbest(japanese_text: str, num: int = 3, style: str = 'kana_arrows') -> List[str]:
+
+    # run morphological analysis on input string
+    tagger = Tagger()
     parsings_as_raw_output_strings = tagger.nbest(japanese_text, num).strip().split('EOS')
     annotated_strings = []
-    
+
     for parsing in parsings_as_raw_output_strings:
         if parsing != '':
-            #convert list of tagged tokens to xml tree
+            # convert list of tagged tokens to xml tree
             xml_tree = raw_tagger_output_to_xml(parsing)
-    
-            #run phonological processes on morphemes in xml_tree
-            ChaOne = etree.XSLT(etree.parse('./chaone-1.3.0b2/chaone_t_main.xsl'))
+
+            # run phonological processes on morphemes in xml_tree
+            ChaOne = etree.XSLT(etree.parse(os.path.join(os.path.dirname(__file__), CHAONE_FOLDER, CHAONE_FILENAME)))
             transformed_tree = ChaOne(xml_tree)
-    
-            #use tranformed xml tree to construct an annotated string
-            annotated_strings.append(transformed_tree_to_annotated_kana(transformed_tree))
+
+            # use tranformed xml tree to construct an annotated string
+            annotated_strings.append(transformed_tree_to_annotated_transcription(transformed_tree, style))
 
     return annotated_strings
 
-def raw_tagger_output_to_xml(parsing):
+
+def raw_tagger_output_to_xml(parsing: str) -> etree.ElementBase:
     xml_tree = etree.Element('S')
     words = parsing.strip().splitlines()
     for word in words:
@@ -52,18 +65,17 @@ def raw_tagger_output_to_xml(parsing):
         feature_list = next(csv.reader([features]))
         if len(feature_list) > 6:
             is_unk = False
-            feature_tuple = fugashi.UnidicFeatures29(*feature_list)
+            feature_tuple = UnidicFeatures29(*feature_list)
         else:
             is_unk = True
             feature_tuple = UnidicFeaturesUnk(*feature_list)
-        
+
         # ChaSen output format required by ChaOne:
         # (OUTPUT_FORMAT "<cha:W1 orth="%m" pron="%?U/%m/%a0/" pos="%U(%P-)"%?T/ cType="%T "//%?F/ cForm="%F "//%?I/ %i0//>%m\n")
 
-        
-        # (OUTPUT_FORMAT "<cha:W1 
+        # (OUTPUT_FORMAT "<cha:W1
         word_element = etree.Element('W1')
-        # orth=\"%m\" 
+        # orth=\"%m\"
         word_element.set('orth', str(surface))
         # pron=\"%?U/%m/%a0/\" pos=\"%U(%P-)\"
         if is_unk:
@@ -79,12 +91,12 @@ def raw_tagger_output_to_xml(parsing):
                     if feature_tuple.pos4 != '*':
                         pos += '-' + feature_tuple.pos4
             word_element.set('pos', pos)
-        #%?T/ cType=\"%T \"//%?F/ cForm=\"%F \"//
+        # %?T/ cType=\"%T \"//%?F/ cForm=\"%F \"//
         if feature_tuple.cType is not None and feature_tuple.cType != '*':
             word_element.set('cType', feature_tuple.cType)
             word_element.set('cForm', feature_tuple.cForm)
 
-        #%?I/ %i0 ///>\n")
+        # %?I/ %i0 ///>\n")
         if feature_tuple.orthBase is not None and feature_tuple.orthBase != '*':
             word_element.set('orthBase', feature_tuple.orthBase)
         if feature_tuple.pronBase is not None and feature_tuple.pronBase != '*':
@@ -136,12 +148,13 @@ def raw_tagger_output_to_xml(parsing):
         xml_tree.append(word_element)
     return xml_tree
 
-def tagger_output_to_xml(words):
+
+def tagger_output_to_xml(words: List[UnidicFeatures29]) -> etree.ElementBase:
     xml_tree = etree.Element('S')
     for word in words:
-        # (OUTPUT_FORMAT "<cha:W1 
+        # (OUTPUT_FORMAT "<cha:W1
         word_element = etree.Element('W1')
-        # orth=\"%m\" 
+        # orth=\"%m\"
         word_element.set('orth', str(word))
         # pron=\"%?U/%m/%a0/\" pos=\"%U(%P-)\"
         if word.is_unk:
@@ -157,12 +170,12 @@ def tagger_output_to_xml(words):
                     if word.feature.pos4 != '*':
                         pos += '-' + word.feature.pos4
             word_element.set('pos', pos)
-        #%?T/ cType=\"%T \"//%?F/ cForm=\"%F \"//
+        # %?T/ cType=\"%T \"//%?F/ cForm=\"%F \"//
         if word.feature.cType is not None and word.feature.cType != '*':
             word_element.set('cType', word.feature.cType)
             word_element.set('cForm', word.feature.cForm)
 
-        #%?I/ %i0 ///>\n")
+        # %?I/ %i0 ///>\n")
         if word.feature.orthBase is not None and word.feature.orthBase != '*':
             word_element.set('orthBase', word.feature.orthBase)
         if word.feature.pronBase is not None and word.feature.pronBase != '*':
@@ -214,17 +227,19 @@ def tagger_output_to_xml(words):
         xml_tree.append(word_element)
     return xml_tree
 
+
 def split_mora(kana: str) -> List[str]:
-    mora_list = []
+    mora_list: List[str] = []
     vowel_deleters = {'ャ', 'ュ', 'ョ', 'ァ', 'ィ', 'ゥ', 'ェ', 'ォ'}
-    for i in range(0, len(kana_string)):
-        if i > 0 and kana_string[i] in vowel_deleters and mora_list[-1][-1] != kana_string[i]:
-            mora_list[-1] = mora_list[-1] + kana_string[i]
+    for i in range(0, len(kana)):
+        if i > 0 and kana[i] in vowel_deleters and mora_list[-1][-1] != kana[i]:
+            mora_list[-1] = mora_list[-1] + kana[i]
         else:
-            mora_list.append(kana_string[i])
+            mora_list.append(kana[i])
     return mora_list
-    
-def transformed_tree_to_annotated_kana(tree):
+
+
+def transformed_tree_to_annotated_transcription(tree: etree.ElementBase, style: str = 'kana_arrows') -> str:
     annotated_string = ''
     current_pitch_level = 'L'
     for ap in tree.getroot():
@@ -240,7 +255,7 @@ def transformed_tree_to_annotated_kana(tree):
                 word_pron = w2.get('pron')
                 if accented_mora == 0:
                     if current_pitch_level == 'H' or w2.get('pos')[0:3] == '助動詞':
-                        annotated_string += word_pron + ' ' 
+                        annotated_string += word_pron + ' '
                     else:
                         mora_list = split_mora(word_pron)
                         annotated_string += mora_list[0] + '↗' + ''.join(mora_list[1:])
@@ -260,10 +275,65 @@ def transformed_tree_to_annotated_kana(tree):
     return annotated_string.strip()
 
 
-text1 = """僕が最初に読んだ日本語長編小説は吉本ばななの「キッチン」だ。
-短編小説は村上春樹の作品を決行読んでいるけど、"""
-text2 = """日本語の小説はあまり読んでいない。
-日英翻訳者としてこのままでいいのかな…"""
-print(annotate_accent(text1))
-print(annotate_accent(text2))
-print(annotate_accent_nbest('日本語'))
+def interactive_mode(nbest: int = 1, style: str = "kana_arrows") -> None:
+    print("Type Japanese text followed by the ENTER key to get annotations. Type 'quit' or 'exit' to exit.")
+    line = input()
+    while line.lower() not in {'quit', 'exit'}:
+        print(annotate_line(line))
+        line = input()
+    sys.exit()
+
+
+def annotate_line(text: str, nbest: int = 1, style: str = 'kana_arrows') -> str:
+    if args.nbest == 1:
+        result = annotate_accent(text, args.style)
+    else:
+        result_list = annotate_accent_nbest(text, args.nbest, args.style)
+        result = ''
+        for index, parsing in zip(range(1, len(result_list)+1), result_list):
+            result += f'Parsing {index}:\n' + parsing + '\n\n'
+    return result
+
+
+def annotate_file(filename: str, nbest: int = 1, style: str = 'kana_arrows') -> str:
+    result = ''
+    with open(filename) as f:
+        for line in f:
+            line = line.strip()
+            if line != '':
+                result += annotate_line(line, nbest, style)
+            else:
+                result += '\n'
+    return result
+
+
+def output_to_file(annotated_text: str, filename: str) -> None:
+    with open(filename, mode='w') as f:
+        f.write(annotated_text)
+
+
+if __name__ == '__main__':
+    CLI_parser = argparse.ArgumentParser(description="jaan - A Japanese accent annotator")
+    CLI_parser.add_argument("-n", "--nbest", help="The number of parsings to provide.", type=int, default=1)
+    CLI_parser.add_argument("-s", "--style", help="The style of transcription and annotation.",
+                            default="kana_arrows", choices=["kana_arrows", "kana_notches", "jsl"])
+
+    input_group = CLI_parser.add_mutually_exclusive_group()
+    input_group.add_argument("-t", "--text", help="Text to be annotated.")
+    input_group.add_argument("-i", "--inputfile", help="Name of a text file containing text to be parsed and annotated.")
+
+    CLI_parser.add_argument("-o", "--outputfile", help="Name of the file to output the annotated parsing to.")
+    args = CLI_parser.parse_args()
+
+    if args.text is None and args.inputfile is None:
+        interactive_mode(args.nbest, args.style)
+        sys.exit()
+    elif args.text is not None:
+        annotated_text = annotate_line(args.text, args.nbest, args.style)
+    else:
+        annotated_text = annotate_file(args.inputfile, args.nbest, args.style)
+
+    if args.outputfile is not None:
+        output_to_file(annotated_text, args.outputfile)
+    else:
+        print(annotated_text)
